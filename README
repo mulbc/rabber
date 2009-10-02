@@ -1,0 +1,5 @@
+(git add) :- bei neuen Dateien
+git commit -a :- Änderungen an bereits vorhandenen Dateien übertragen
+git push :- Änderungen auf GitHub laden
+
+git pull

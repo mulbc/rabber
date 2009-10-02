@@ -138,7 +138,7 @@ class Client
         
         expect_tag do |name, attrs|
           case name
-          when "auth"
+            when "auth"
             raise ArgumentError if @user
             
             authzid, username, password = Base64.decode64(expect_text).split("\0")
@@ -146,8 +146,38 @@ class Client
             @user = username
             
             @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl"
-          when "stream:stream"
+            when "stream:stream"
             handle_stream
+            when "iq"
+            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
+              if attrs["type"] == "set"
+                expect_tag do |name, attrs|
+                  case name
+                    when "bind"
+                    @xml_output.bind "xmlns" => attrs["xmlns"] do
+                      @xml_output.jid "#{@user}@localhost/#{stream_id}"
+                    end
+                    when "session"
+                    @xml_output.session "xmlns" => attrs["xmlns"] do
+                      @xml_output.jid "#{@user}@localhost/#{stream_id}"
+                    end
+                  else
+                    raise ArgumentError, name
+                  end
+                end
+              else
+                expect_tag do |ame, attrs|
+                  case ame
+                    when "query"
+                      #Transports introduction
+                    @xml_output.query "xmlns" => attrs["xmlns"]
+                  else
+                    raise ArgumentError, name
+                  end
+                end
+              end
+            end # end iq
+            
           else
             raise ArgumentError, name
           end
