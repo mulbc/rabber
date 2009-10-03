@@ -1,0 +1,22 @@
+# We use a faked Rails environment here.
+
+load "databases.rake"
+
+task :rails_env do
+  RAILS_ROOT = "."
+  RAILS_ENV = "default"
+  
+  module Rails
+    class Configuration
+      def database_configuration
+        {"default" => {"adapter" => "sqlite3", "database" => "rabber.sqlite3"}}
+      end
+    end
+  end
+end
+
+task :environment => :rails_env do
+  require "activerecord"
+  ActiveRecord::Base.logger = Logger.new STDOUT
+  ActiveRecord::Base.establish_connection Rails::Configuration.new.database_configuration["default"]
+end

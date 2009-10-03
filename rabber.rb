@@ -3,6 +3,7 @@ require "thread"
 require "rexml/document"
 require "base64"
 require "builder"
+require "activerecord"
 
 class DebugIoWrapper < IO
   def initialize(target)
@@ -138,7 +139,7 @@ class Client
         
         expect_tag do |name, attrs|
           case name
-            when "auth"
+          when "auth"
             raise ArgumentError if @user
             
             authzid, username, password = Base64.decode64(expect_text).split("\0")
@@ -146,18 +147,18 @@ class Client
             @user = username
             
             @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl"
-            when "stream:stream"
+          when "stream:stream"
             handle_stream
-            when "iq"
+          when "iq"
             @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
               if attrs["type"] == "set"
                 expect_tag do |name, attrs|
                   case name
-                    when "bind"
+                  when "bind"
                     @xml_output.bind "xmlns" => attrs["xmlns"] do
                       @xml_output.jid "#{@user}@localhost/#{stream_id}"
                     end
-                    when "session"
+                  when "session"
                     @xml_output.session "xmlns" => attrs["xmlns"] do
                       @xml_output.jid "#{@user}@localhost/#{stream_id}"
                     end
@@ -168,8 +169,8 @@ class Client
               else
                 expect_tag do |ame, attrs|
                   case ame
-                    when "query"
-                      #Transports introduction
+                  when "query"
+                    #Transports introduction
                     @xml_output.query "xmlns" => attrs["xmlns"]
                   else
                     raise ArgumentError, name
@@ -187,12 +188,30 @@ class Client
   end
 end
 
-tcpserver = Socket.new Socket::AF_INET, Socket::SOCK_STREAM, 0
-tcpserver.setsockopt Socket::SOL_SOCKET, Socket::SO_LINGER, [1, 0].pack("ii") # to avoid port block (TIME_WAIT state)
-tcpserver.bind Socket.pack_sockaddr_in(5222, '')
-tcpserver.listen 1024
+class User < ActiveRecord::Base
+  
+end
 
-socket = tcpserver.accept[0]
+ActiveRecord::Base.logger = Logger.new STDOUT
+ActiveRecord::Base.establish_connection :adapter => "sqlite3", :database => "rabber.sqlite3"
 
-client = Client.new socket
-client.run
+if $*.empty?
+  tcpserver = Socket.new Socket::AF_INET, Socket::SOCK_STREAM, 0
+  tcpserver.setsockopt Socket::SOL_SOCKET, Socket::SO_LINGER, [1, 0].pack("ii") # to avoid port block (TIME_WAIT state)
+  tcpserver.bind Socket.pack_sockaddr_in(5222, '')
+  tcpserver.listen 1024
+  
+  socket = tcpserver.accept[0]
+  
+  client = Client.new socket
+  client.run
+else
+  case $*[0]
+  when "user"
+    case $*[1]
+    when "add"
+      User.create :name => $*[2], :password => $*[3]
+      puts "User added."
+    end
+  end
+end
