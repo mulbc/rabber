@@ -5,7 +5,18 @@ require "base64"
 require "builder"
 require "activerecord"
 
+ActiveRecord::Base # load here to avoid verbose warnings
+
 $VERBOSE = true
+
+module Kernel
+  def quiet
+    verbose = $VERBOSE
+    $VERBOSE = false
+    yield
+    $VERBOSE = verbose
+  end
+end
 
 class DebugIoWrapper < IO
   def initialize(target)
@@ -152,55 +163,56 @@ class Client
           when "stream:stream"
             handle_stream
           when "iq"
-            if attrs["type"] == "set"
+            case attrs["type"]
+            when "set"
               expect_tag do |name2, attrs2|
+                respond = lambda { |type, send_jid|
+                  @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
+                    @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"] do
+                      @xml_output.jid "#{@user}@localhost/#{stream_id}" if send_jid
+                    end
+                    yield if block_given?
+                  end
+                }
+                
                 case name2
                 when "bind"
-                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
-                    @xml_output.bind "xmlns" => attrs2["xmlns"] do
-                      @xml_output.jid "#{@user}@localhost/#{stream_id}"
-                    end
-                  end
+                  respond.call "result", true
                 when "session"
-                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
-                    @xml_output.session "xmlns" => attrs2["xmlns"] do
-                      @xml_output.jid "#{@user}@localhost/#{stream_id}"
-                    end
-                  end
-                else 
-                  @xml_output.iq "type" => "error", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
-                    @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"]
+                  respond.call "result", true
+                else
+                  respond.call "error", false do
                     @xml_output.error "type" => "cancel" do
                       @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
                     end
-                  end                    
+                  end
                   raise ArgumentError, name2
                 end
               end
-            else # attrs["type"] == "get"
+            when "get"
               expect_tag do |name2, attrs2|
+                respond = lambda { |type|
+                  @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
+                    @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"]
+                    yield if block_given?
+                  end
+                }
+                
                 case name2
                 when "query"
-                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do                        
-                    #Transports introduction
-                    @xml_output.query "xmlns" => attrs2["xmlns"]
-                  end
+                  respond.call "result"
+                  # TODO transports
                 when "vCard"
-                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
-                    #vCard return not implemented so we send back an empty vCard
-                    @xml_output.vCard "xmlns" => attrs2["xmlns"]                    
-                  end
+                  respond.call "result"
+                  # TODO proper vCard
                 when "ping"
-                  # let's send a PONG!
-                  puts "", "pong!"
                   @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
                 else
-                  @xml_output.iq "type" => "error", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
-                    @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"]
+                  respond.call "error" do
                     @xml_output.error "type" => "cancel" do
                       @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
                     end
-                  end 
+                  end
                   raise ArgumentError, name2
                 end
               end
