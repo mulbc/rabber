@@ -4,6 +4,8 @@ require "rexml/document"
 require "base64"
 require "builder"
 
+$VERBOSE = true
+
 class DebugIoWrapper < IO
   def initialize(target)
     @target = target
@@ -138,7 +140,7 @@ class Client
         
         expect_tag do |name, attrs|
           case name
-            when "auth"
+          when "auth"
             raise ArgumentError if @user
             
             authzid, username, password = Base64.decode64(expect_text).split("\0")
@@ -146,38 +148,82 @@ class Client
             @user = username
             
             @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl"
-            when "stream:stream"
+          when "stream:stream"
             handle_stream
-            when "iq"
-            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
-              if attrs["type"] == "set"
-                expect_tag do |name, attrs|
-                  case name
-                    when "bind"
-                    @xml_output.bind "xmlns" => attrs["xmlns"] do
+          when "iq"
+            if attrs["type"] == "set"
+              expect_tag do |name2, attrs2|
+                case name2
+                when "bind"
+                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
+                    @xml_output.bind "xmlns" => attrs2["xmlns"] do
                       @xml_output.jid "#{@user}@localhost/#{stream_id}"
                     end
-                    when "session"
-                    @xml_output.session "xmlns" => attrs["xmlns"] do
+                  end
+                when "session"
+                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
+                    @xml_output.session "xmlns" => attrs2["xmlns"] do
                       @xml_output.jid "#{@user}@localhost/#{stream_id}"
                     end
-                  else
-                    raise ArgumentError, name
                   end
-                end
-              else
-                expect_tag do |ame, attrs|
-                  case ame
-                    when "query"
-                      #Transports introduction
-                    @xml_output.query "xmlns" => attrs["xmlns"]
-                  else
-                    raise ArgumentError, name
-                  end
+                else 
+                  @xml_output.iq "type" => "error", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
+                    @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"]
+                    @xml_output.error "type" => "cancel" do
+                      @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
+                    end
+                  end                    
+                  raise ArgumentError, name2
                 end
               end
-            end # end iq
-            
+            else # attrs["type"] == "get"
+              expect_tag do |name2, attrs2|
+                case name2
+                when "query"
+                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do                        
+                    #Transports introduction
+                    @xml_output.query "xmlns" => attrs2["xmlns"]
+                  end
+                when "vCard"
+                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
+                    #vCard return not implemented so we send back an empty vCard
+                    @xml_output.vCard "xmlns" => attrs2["xmlns"]                    
+                  end
+                when "ping"
+                  # let's send a PONG!
+                  puts "", "pong!"
+                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
+                else
+                  @xml_output.iq "type" => "error", "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
+                    @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"]
+                    @xml_output.error "type" => "cancel" do
+                      @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
+                    end
+                  end 
+                  raise ArgumentError, name2
+                end
+              end
+            end
+          when "presence"
+            expect_tag do |name2, attrs2|
+              case name2
+              when "priority"
+                expect_text do |priority|
+                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
+                end
+              else
+                raise ArgumentError, name2
+              end
+            end
+            expect_tag do |name3, attrs3|
+              case name3
+              when "c"
+                # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
+                # can be ignored in the beginning :)
+              else
+                raise ArgumentError, name3
+              end
+            end
           else
             raise ArgumentError, name
           end
