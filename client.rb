@@ -9,9 +9,12 @@ class Client
     
     @xml_output = Builder::XmlMarkup.new :target => @socket
     Thread.new {
-      Thread.current.abort_on_exception = true
-      REXML::Document.parse_stream @socket, self
-      @queue.push [:connection_closed]
+      begin
+        REXML::Document.parse_stream @socket, self
+        raise ConnectionClosedError
+      rescue Exception => e
+        @queue.push e
+      end
     }
   end
   
@@ -32,7 +35,7 @@ class Client
   
   def next_element
     @next_element ||= @queue.pop
-    raise ConnectionClosedError if @next_element.first == :connection_closed
+    raise @next_element if @next_element.is_a? Exception
     @next_element
   end
   
@@ -105,13 +108,22 @@ class Client
         
         expect_tag do |name, attrs|
           begin
-            case name
-            when "auth", "response", "iq", "presence", "message"
-              __send__ "stanza_#{name}", attrs
-            when "stream:stream"
-              handle_stream
-            else 
-              raise ArgumentError, name
+            if @user.nil?
+              case name
+              when "auth", "response"
+                __send__ "stanza_#{name}", attrs
+              else 
+                raise ArgumentError, name
+              end
+            else
+              case name
+              when "iq", "presence", "message"
+                __send__ "stanza_#{name}", attrs
+              when "stream:stream"
+                handle_stream
+              else 
+                raise ArgumentError, name
+              end
             end
           rescue SaslError => e
             @xml_output.failure "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
@@ -124,8 +136,6 @@ class Client
   end
   
   def stanza_auth(attrs)
-    raise ArgumentError if @user
-    
     case attrs["mechanism"]
     when "PLAIN"
       authzid, username, password = Base64.decode64(expect_text).split("\0")
@@ -212,7 +222,7 @@ class Client
                   group = RoasterGroup.create :user => @user, :name => group_name
                 end
               end
-              RoasterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"]
+              RoasterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RoasterEntry::SUBSCRIPTION_TO
               respond.call "result", true
             end
           end
