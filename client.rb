@@ -222,7 +222,7 @@ class Client
                   group = RoasterGroup.create :user => @user, :name => group_name
                 end
               end
-              RoasterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"]
+              RoasterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RoasterEntry::SUBSCRIPTION_TO
               respond.call "result", true
             end
           end

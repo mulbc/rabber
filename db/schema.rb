@@ -12,23 +12,24 @@
 ActiveRecord::Schema.define(:version => 0) do
 
   create_table "roaster_entries", :force => true do |t|
-    t.integer  "roaster_group_id"
-    t.string   "jid"
+    t.integer  "roaster_group_id", :null => false
+    t.string   "jid",              :null => false
     t.string   "name"
+    t.integer  "subscription",     :null => false
     t.datetime "created_at"
     t.datetime "updated_at"
   end
 
   create_table "roaster_groups", :force => true do |t|
-    t.integer  "user_id"
-    t.string   "name"
+    t.integer  "user_id",    :null => false
+    t.string   "name",       :null => false
     t.datetime "created_at"
     t.datetime "updated_at"
   end
 
   create_table "users", :force => true do |t|
-    t.string   "name"
-    t.string   "password"
+    t.string   "name",                            :null => false
+    t.string   "password",                        :null => false
     t.string   "digest_md5_nonce"
     t.integer  "digest_md5_nc",    :default => 0, :null => false
     t.datetime "created_at"

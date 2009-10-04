@@ -20,6 +20,7 @@ class DbBase < ActiveRecord::Migration
       t.integer :roaster_group_id, :null => false
       t.string :jid, :null => false
       t.string :name
+      t.integer :subscription, :null => false
       
       t.timestamps
     end
