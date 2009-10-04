@@ -166,6 +166,7 @@ class Client
     when "PLAIN"
       authzid, username, password = Base64.decode64(expect_text).split("\0")
       user = User.find_by_name username
+      user.server = @server
       raise SaslError, "not-authorized" if user.password != password
       @user = user
       @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl"
@@ -175,6 +176,7 @@ class Client
         raise SaslError if not next_is_text?
         response = parse_comma_seperated_hash Base64.decode64(expect_text)
         user = User.find_by_name response["username"]
+        user.server = @server
         authenticate_user user, response, user.digest_md5_nonce, user.digest_md5_nc + 1
       rescue SaslError # run normal challenge/response
         @xml_output.challenge "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
@@ -191,6 +193,7 @@ class Client
   def stanza_response(attrs)
     response = parse_comma_seperated_hash Base64.decode64(expect_text)
     user = User.find_by_name response["username"]
+    user.server = @server
     authenticate_user user, response, @nonce, 1
   end
   
@@ -319,6 +322,7 @@ class Client
     case attrs["type"]
       # TODO Fix REXML ParseException on  ä ö ü
     when "chat"
+      message = nil
       loop do
         break if next_is_tag_end?
         expect_tag do |name2, attrs2|                  
@@ -337,11 +341,29 @@ class Client
           end  
         end
       end
+      name, host = attrs["to"].split "@"
+      if host == @server.hostname
+        to_user = User.find_by_name name
+        to_client = @server.find_client to_user
+        to_client.send_message attrs["type"], @user.jid, message
+      else
+        raise NotImplementedError
+      end
     when "error", "groupchat", "headline", "normal"
       #Has to be implemented like http://xmpp.org/rfcs/rfc3921.html#stanzas-message-type
     else
       raise ArgumentError, name
     end
+  end
+  
+  def send_message(type, from_user, message)
+    queue_action {
+      @xml_output.message "type" => type, "to" => @user, "from" => from_user do
+        @xml_output.body do
+          @xml_output.text! message
+        end
+      end
+    }
   end
   
   def parse_comma_seperated_hash(data)
