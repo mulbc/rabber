@@ -236,7 +236,13 @@ class Client
         
         case name2
         when "query"
-          respond.call "result"
+          respond.call "result" do
+            if attrs2["xmlns"] == "jabber:iq:roster"
+              user.roaster_entry.each do |groupid, jid, name|
+                @xml_output.item "jid" => jid, "name" => name, "subscription" => "both"
+              end
+            end
+          end
           # TODO transports
         when "vCard"
           respond.call "result"
@@ -261,13 +267,13 @@ class Client
       expect_tag do |name2, attrs2|
         case name2
         when "status"
-          expect_text do |status|
-            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
-          end
+          status = expect_text
+          #          buddies = User.roaster_entries
+          #          puts buddies
+          @xml_output.status "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
         when "priority"
-          expect_text do |priority|
-            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
-          end
+          priority = expect_text
+          @xml_output.priority "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
         when "c"
           # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
           # can be ignored in the beginning :)
@@ -300,6 +306,8 @@ class Client
           end  
         end
       end
+    when "error", "groupchat", "headline", "normal"
+      #Has to be implemented like http://xmpp.org/rfcs/rfc3921.html#stanzas-message-type
     else
       raise ArgumentError, name
     end
