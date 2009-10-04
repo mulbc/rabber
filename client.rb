@@ -108,13 +108,22 @@ class Client
         
         expect_tag do |name, attrs|
           begin
-            case name
-            when "auth", "response", "iq", "presence", "message"
-              __send__ "stanza_#{name}", attrs
-            when "stream:stream"
-              handle_stream
-            else 
-              raise ArgumentError, name
+            if @user.nil?
+              case name
+              when "auth", "response"
+                __send__ "stanza_#{name}", attrs
+              else 
+                raise ArgumentError, name
+              end
+            else
+              case name
+              when "iq", "presence", "message"
+                __send__ "stanza_#{name}", attrs
+              when "stream:stream"
+                handle_stream
+              else 
+                raise ArgumentError, name
+              end
             end
           rescue SaslError => e
             @xml_output.failure "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
@@ -127,8 +136,6 @@ class Client
   end
   
   def stanza_auth(attrs)
-    raise ArgumentError if @user
-    
     case attrs["mechanism"]
     when "PLAIN"
       authzid, username, password = Base64.decode64(expect_text).split("\0")
