@@ -166,6 +166,7 @@ class Client
     when "PLAIN"
       authzid, username, password = Base64.decode64(expect_text).split("\0")
       user = User.find_by_name username
+      raise SaslError, "not-authorized" if user.nil?
       user.server = @server
       raise SaslError, "not-authorized" if user.password != password
       @user = user
@@ -176,6 +177,7 @@ class Client
         raise SaslError if not next_is_text?
         response = parse_comma_seperated_hash Base64.decode64(expect_text)
         user = User.find_by_name response["username"]
+        raise SaslError, "not-authorized" if user.nil?
         user.server = @server
         authenticate_user user, response, user.digest_md5_nonce, user.digest_md5_nc + 1
       rescue SaslError # run normal challenge/response
@@ -193,6 +195,7 @@ class Client
   def stanza_response(attrs)
     response = parse_comma_seperated_hash Base64.decode64(expect_text)
     user = User.find_by_name response["username"]
+    raise SaslError, "not-authorized" if user.nil?
     user.server = @server
     authenticate_user user, response, @nonce, 1
   end
