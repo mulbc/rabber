@@ -1,7 +1,8 @@
 class Client
   attr_reader :user
   
-  def initialize(socket)
+  def initialize(server, socket)
+    @server = server
     @socket = socket
     @queue = Queue.new
     @actions = []
@@ -107,7 +108,7 @@ class Client
     @nonce = nil
     
     @xml_output.instruct! :xml, :version => "1.0", :encoding => "UTF-8"
-    @xml_output.stream :stream, "xmlns:stream" => "http://etherx.jabber.org/streams", "xmlns" => "jabber:client", "from" => "localhost", "id" => @current_stream_id, "xml:lang" => "en", "version" => "1.0" do
+    @xml_output.stream :stream, "xmlns:stream" => "http://etherx.jabber.org/streams", "xmlns" => "jabber:client", "from" => @server.hostname, "id" => @current_stream_id, "xml:lang" => "en", "version" => "1.0" do
       
       @xml_output.stream :features do
         if @user.nil?
@@ -178,7 +179,7 @@ class Client
       rescue SaslError # run normal challenge/response
         @xml_output.challenge "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
           @nonce = SecureRandom.base64 30
-          @xml_output.text! Base64.encode64("realm=\"localhost\",nonce=\"#{@nonce}\",qop=\"auth\",charset=utf-8,algorithm=md5-sess")
+          @xml_output.text! Base64.encode64("realm=\"#{@server.hostname}\",nonce=\"#{@nonce}\",qop=\"auth\",charset=utf-8,algorithm=md5-sess")
         end
       end
       
@@ -196,12 +197,12 @@ class Client
   def authenticate_user(user, response, nonce, nc)
     raise SaslError, "not-authorized" if nonce.nil?
     raise SaslError, "not-authorized" if response["nonce"] != nonce
-    raise SaslError, "not-authorized" if response["realm"] != "localhost"
-    raise SaslError, "not-authorized" if response["digest-uri"] != "xmpp/localhost"
+    raise SaslError, "not-authorized" if response["realm"] != @server.hostname
+    raise SaslError, "not-authorized" if response["digest-uri"] != "xmpp/#{@server.hostname}"
     raise SaslError, "not-authorized" if response["nc"].to_i != nc
     
     calc_digest = lambda { |a2|
-      a0 = "#{user.name}:localhost:#{user.password}"
+      a0 = "#{user.name}:#{@server.hostname}:#{user.password}"
       a1 = "#{Digest::MD5.digest a0}:#{nonce}:#{response["cnonce"]}"
       Digest::MD5.hexdigest "#{Digest::MD5.hexdigest a1}:#{nonce}:#{response["nc"]}:#{response["cnonce"]}:#{response["qop"]}:#{Digest::MD5.hexdigest a2}"
     }
@@ -222,9 +223,9 @@ class Client
     when "set"
       expect_tag do |name2, attrs2|
         respond = lambda { |type, send_jid|
-          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}" do
+          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}" do
             @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"] do
-              @xml_output.jid "#{@user.name}@localhost/#{@current_stream_id}" if send_jid
+              @xml_output.jid "#{@user.name}@#{@server.hostname}/#{@current_stream_id}" if send_jid
             end
             yield if block_given?
           end
@@ -263,7 +264,7 @@ class Client
     when "get"
       expect_tag do |name2, attrs2|
         respond = lambda { |type|
-          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}" do
+          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}" do
             @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"]
             yield if block_given?
           end
@@ -277,7 +278,7 @@ class Client
           respond.call "result"
           # TODO proper vCard
         when "ping"
-          @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+          @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
         else
           respond.call "error" do
             @xml_output.error "type" => "cancel" do
@@ -297,11 +298,11 @@ class Client
         case name2
         when "status"
           expect_text do |status|
-            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
           end
         when "priority"
           expect_text do |priority|
-            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
           end
         when "c"
           # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
