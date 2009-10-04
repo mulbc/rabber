@@ -193,102 +193,97 @@ class Client
   end
   
   def stanza_iq(attrs)
-    case attrs["type"]
-    when "set"
-      expect_tag do |name2, attrs2|
-        respond = lambda { |type, send_jid|
-          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}" do
-            @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"] do
-              @xml_output.jid "#{@user.name}@localhost/#{@current_stream_id}" if send_jid
-            end
-            yield if block_given?
+    expect_tag do |name2, attrs2|
+      respond = lambda { |type, send_jid, block|
+        @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}" do
+          @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"] do
+            @xml_output.jid "#{@user.name}@localhost/#{@current_stream_id}" if send_jid
           end
-        }
-        
-        case name2
-        when "bind"
-          respond.call "result", true
-        when "session"
-          respond.call "result", true
-        when "query"
-          case attrs2["xmlns"]
-          when "jabber:iq:roster"
-            expect_tag "item" do |item_name, item_attrs|
-              group = nil
-              expect_tag "group" do
-                group_name = expect_text
-                group = RoasterGroup.first :conditions => ["user_id = ? AND name = ?", @user, group_name]
-                if group.nil?
-                  group = RoasterGroup.create :user => @user, :name => group_name
+          block.call if block
+        end
+      }
+      
+      begin
+        case attrs["type"]
+        when "set"
+          case name2
+          when "bind"
+            respond.call "result", true, nil
+          when "session"
+            respond.call "result", true, nil
+          when "query"
+            case attrs2["xmlns"]
+            when "jabber:iq:roster"
+              expect_tag "item" do |item_name, item_attrs|
+                group = nil
+                expect_tag "group" do
+                  group_name = expect_text
+                  group = RoasterGroup.first :conditions => ["user_id = ? AND name = ?", @user, group_name]
+                  if group.nil?
+                    group = RoasterGroup.create :user => @user, :name => group_name
+                  end
+                end
+                RoasterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RoasterEntry::SUBSCRIPTION_TO
+                respond.call "result", true
+              end
+            end
+          else
+            raise IqError
+          end
+          
+        when "get"
+          case name2
+          when "query"
+            respond.call "result", false, lambda {
+              if attrs2["xmlns"] == "jabber:iq:roster"
+                @user.roaster_entries.each do |entry|
+                  @xml_output.item "jid" => entry.jid, "name" => entry.name, "subscription" => entry.subscription_string
                 end
               end
-              RoasterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RoasterEntry::SUBSCRIPTION_TO
-              respond.call "result", true
-            end
+            }
+            # TODO transports
+          when "vCard"
+            respond.call "result", false, nil
+            # TODO proper vCard
+          when "ping"
+            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+          else
+            raise IqError
           end
-        else
-          respond.call "error", false do
-            @xml_output.error "type" => "cancel" do
-              @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
-            end
-          end
-          #raise ArgumentError, name2
         end
-      end
-    when "get"
-      expect_tag do |name2, attrs2|
-        respond = lambda { |type|
-          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}" do
-            @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"]
-            yield if block_given?
+        
+      rescue IqError
+        respond.call "error", false, lambda {
+          @xml_output.error "type" => "cancel" do
+            @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
           end
         }
-        
-        case name2
-        when "query"
-          respond.call "result" do
-            if attrs2["xmlns"] == "jabber:iq:roster"
-              user.roaster_entry.each do |groupid, jid, name|
-                @xml_output.item "jid" => jid, "name" => name, "subscription" => "both"
-              end
-            end
-          end
-          # TODO transports
-        when "vCard"
-          respond.call "result"
-          # TODO proper vCard
-        when "ping"
-          @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
-        else
-          respond.call "error" do
-            @xml_output.error "type" => "cancel" do
-              @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
-            end
-          end
-          #raise ArgumentError, name2
-        end
       end
-    end    
+    end
   end
   
   def stanza_presence(attrs)
-    loop do
-      break if next_is_tag_end?
-      expect_tag do |name2, attrs2|
-        case name2
-        when "status"
-          status = expect_text
-          #          buddies = User.roaster_entries
-          #          puts buddies
-          @xml_output.status "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
-        when "priority"
-          priority = expect_text
-          @xml_output.priority "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
-        when "c"
-          # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
-          # can be ignored in the beginning :)
-        else
-          raise ArgumentError, name2
+    if attrs["type"] == "subscribe"
+      @xml_output.status "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+    else
+      loop do
+        break if next_is_tag_end?
+        expect_tag do |name2, attrs2|
+          case name2
+          when "status"
+            status = expect_text
+            #          buddies = User.roaster_entries
+            #          puts buddies
+            @xml_output.status "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+          when "priority"
+            priority = expect_text
+            @xml_output.priority "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+          when "c"
+            # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
+            # can be ignored in the beginning :)
+          else
+            raise ArgumentError, name2
+          end
         end
       end
     end
