@@ -149,12 +149,12 @@ class Client
   end
   
   def handle_stream
-    stream_id = @stream_id_counter
+    @current_stream_id = @stream_id_counter
     @stream_id_counter += 1
     @nonce = nil
     
     @xml_output.instruct! :xml, :version => "1.0", :encoding => "UTF-8"
-    @xml_output.stream :stream, "xmlns:stream" => "http://etherx.jabber.org/streams", "xmlns" => "jabber:client", "from" => "localhost", "id" => stream_id, "xml:lang" => "en", "version" => "1.0" do
+    @xml_output.stream :stream, "xmlns:stream" => "http://etherx.jabber.org/streams", "xmlns" => "jabber:client", "from" => "localhost", "id" => @current_stream_id, "xml:lang" => "en", "version" => "1.0" do
       
       @xml_output.stream :features do
         if @user.nil?
@@ -175,139 +175,12 @@ class Client
         expect_tag do |name, attrs|
           begin
             case name
-            when "auth", "response"
+            when "auth", "response", "iq", "presence", "message"
               __send__ "stanza_#{name}", attrs
-              
             when "stream:stream"
               handle_stream
-              
-            when "iq"
-              case attrs["type"]
-              when "set"
-                expect_tag do |name2, attrs2|
-                  respond = lambda { |type, send_jid|
-                    @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
-                      @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"] do
-                        @xml_output.jid "#{@user.name}@localhost/#{stream_id}" if send_jid
-                      end
-                      yield if block_given?
-                    end
-                  }
-                  
-                  case name2
-                  when "bind"
-                    respond.call "result", true
-                  when "session"
-                    respond.call "result", true
-                  when "query"
-                    case attrs2["xmlns"]
-                    when "jabber:iq:roster"
-                      #We will get something new for the roaster
-                      expect_tag do |name3, attrs3|
-                        case name3
-                        when "item"
-                          respond.call "result", true
-                          newUserJID = attrs3["jid"]
-                          newUserName = attrs3["name"]
-                          expect_tag do |name4, attrs4|
-                            case name4
-                            when "group"
-                              newUserGroup = expect_text
-                            else
-                              raise ArgumentError, name4
-                            end
-                          end
-                        else
-                          raise ArgumentError, name3
-                        end
-                      end
-                    end
-                  else
-                    respond.call "error", false do
-                      @xml_output.error "type" => "cancel" do
-                        @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
-                      end
-                    end
-                    #raise ArgumentError, name2
-                  end
-                end
-              when "get"
-                expect_tag do |name2, attrs2|
-                  respond = lambda { |type|
-                    @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{stream_id}" do
-                      @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"]
-                      yield if block_given?
-                    end
-                  }
-                  
-                  case name2
-                  when "query"
-                    respond.call "result"
-                    # TODO transports
-                  when "vCard"
-                    respond.call "result"
-                    # TODO proper vCard
-                  when "ping"
-                    @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
-                  else
-                    respond.call "error" do
-                      @xml_output.error "type" => "cancel" do
-                        @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
-                      end
-                    end
-                    #raise ArgumentError, name2
-                  end
-                end
-              end
-              
-            when "presence"
-              loop do
-                break if next_is_tag_end?
-                expect_tag do |name2, attrs2|
-                  case name2
-                  when "status"
-                    expect_text do |status|
-                      @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
-                    end
-                  when "priority"
-                    expect_text do |priority|
-                      @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
-                    end
-                  when "c"
-                    # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
-                    # can be ignored in the beginning :)
-                  else
-                    raise ArgumentError, name2
-                  end
-                end
-              end
-              
-            when "message"
-              case attrs["type"]
-                # TODO Fix REXML ParseException on  ä ö ü
-              when "chat"
-                loop do
-                  break if next_is_tag_end?
-                  expect_tag do |name2, attrs2|                  
-                    case name2
-                    when "body"
-                      message = expect_text
-                    when "html"
-                      expect_tag do |name3, attrs3|
-                        case name3
-                        when "body"
-                          message_html = expect_text
-                        end
-                      end
-                    else
-                      raise ArgumentError, name2
-                    end  
-                  end
-                end
-                
-              else
-                raise ArgumentError, name
-              end
+            else 
+              raise ArgumentError, name
             end
           rescue SaslError => e
             @xml_output.failure "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
@@ -375,6 +248,136 @@ class Client
     @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
       response_value = calc_digest.call ":#{response["digest-uri"]}"
       @xml_output.text! Base64.encode64("rspauth=#{response_value}")
+    end
+  end
+  
+  def stanza_iq(attrs)
+    case attrs["type"]
+    when "set"
+      expect_tag do |name2, attrs2|
+        respond = lambda { |type, send_jid|
+          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}" do
+            @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"] do
+              @xml_output.jid "#{@user.name}@localhost/#{@current_stream_id}" if send_jid
+            end
+            yield if block_given?
+          end
+        }
+        
+        case name2
+        when "bind"
+          respond.call "result", true
+        when "session"
+          respond.call "result", true
+        when "query"
+          case attrs2["xmlns"]
+          when "jabber:iq:roster"
+            #We will get something new for the roaster
+            expect_tag do |name3, attrs3|
+              case name3
+              when "item"
+                respond.call "result", true
+                newUserJID = attrs3["jid"]
+                newUserName = attrs3["name"]
+                expect_tag do |name4, attrs4|
+                  case name4
+                  when "group"
+                    newUserGroup = expect_text
+                  else
+                    raise ArgumentError, name4
+                  end
+                end
+              else
+                raise ArgumentError, name3
+              end
+            end
+          end
+        else
+          respond.call "error", false do
+            @xml_output.error "type" => "cancel" do
+              @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
+            end
+          end
+          #raise ArgumentError, name2
+        end
+      end
+    when "get"
+      expect_tag do |name2, attrs2|
+        respond = lambda { |type|
+          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}" do
+            @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"]
+            yield if block_given?
+          end
+        }
+        
+        case name2
+        when "query"
+          respond.call "result"
+          # TODO transports
+        when "vCard"
+          respond.call "result"
+          # TODO proper vCard
+        when "ping"
+          @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+        else
+          respond.call "error" do
+            @xml_output.error "type" => "cancel" do
+              @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
+            end
+          end
+          #raise ArgumentError, name2
+        end
+      end
+    end    
+  end
+  
+  def stanza_presence(attrs)
+    loop do
+      break if next_is_tag_end?
+      expect_tag do |name2, attrs2|
+        case name2
+        when "status"
+          expect_text do |status|
+            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+          end
+        when "priority"
+          expect_text do |priority|
+            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+          end
+        when "c"
+          # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
+          # can be ignored in the beginning :)
+        else
+          raise ArgumentError, name2
+        end
+      end
+    end
+  end
+  
+  def stanza_message(attrs)
+    case attrs["type"]
+      # TODO Fix REXML ParseException on  ä ö ü
+    when "chat"
+      loop do
+        break if next_is_tag_end?
+        expect_tag do |name2, attrs2|                  
+          case name2
+          when "body"
+            message = expect_text
+          when "html"
+            expect_tag do |name3, attrs3|
+              case name3
+              when "body"
+                message_html = expect_text
+              end
+            end
+          else
+            raise ArgumentError, name2
+          end  
+        end
+      end
+    else
+      raise ArgumentError, name
     end
   end
   

@@ -15,7 +15,7 @@ ActiveRecord::Schema.define(:version => 0) do
     t.string   "name"
     t.string   "password"
     t.string   "digest_md5_nonce"
-    t.integer  "digest_md5_nc"
+    t.integer  "digest_md5_nc",    :default => 0, :null => false
     t.datetime "created_at"
     t.datetime "updated_at"
   end
