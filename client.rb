@@ -9,9 +9,12 @@ class Client
     
     @xml_output = Builder::XmlMarkup.new :target => @socket
     Thread.new {
-      Thread.current.abort_on_exception = true
-      REXML::Document.parse_stream @socket, self
-      @queue.push [:connection_closed]
+      begin
+        REXML::Document.parse_stream @socket, self
+        raise ConnectionClosedError
+      rescue Exception => e
+        @queue.push e
+      end
     }
   end
   
@@ -32,7 +35,7 @@ class Client
   
   def next_element
     @next_element ||= @queue.pop
-    raise ConnectionClosedError if @next_element.first == :connection_closed
+    raise @next_element if @next_element.is_a? Exception
     @next_element
   end
   
