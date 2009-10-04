@@ -175,52 +175,8 @@ class Client
         expect_tag do |name, attrs|
           begin
             case name
-            when "auth"
-              raise ArgumentError if @user
-              
-              case attrs["mechanism"]
-              when "PLAIN"
-                authzid, username, password = Base64.decode64(expect_text).split("\0")
-                user = User.find_by_name username
-                raise SaslError, "not-authorized" if user.password != password
-                @user = user
-                @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl"
-                
-              when "DIGEST-MD5"
-                if next_is_text?
-                  expect_text # for subsequent authentication, not yet supported
-                end
-                @xml_output.challenge "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
-                  @nonce = SecureRandom.base64 30
-                  @xml_output.text! Base64.encode64("realm=\"localhost\",nonce=\"#{@nonce}\",qop=\"auth\",charset=utf-8,algorithm=md5-sess")
-                end
-                
-              else
-                raise ArgumentError
-              end
-              
-            when "response"
-              response = parse_comma_seperated_hash Base64.decode64(expect_text)
-              
-              raise ArgumentError if @nonce.nil?
-              raise ArgumentError if response["nonce"] != @nonce
-              raise ArgumentError if response["realm"] != "localhost"
-              raise ArgumentError if response["digest-uri"] != "xmpp/localhost"
-              raise ArgumentError if response["nc"] != "00000001"
-              
-              user = User.find_by_name response["username"]
-              calc_digest = lambda { |a2|
-                a0 = "#{user.name}:localhost:#{user.password}"
-                a1 = "#{Digest::MD5.digest a0}:#{@nonce}:#{response["cnonce"]}"
-                Digest::MD5.hexdigest "#{Digest::MD5.hexdigest a1}:#{@nonce}:#{response["nc"]}:#{response["cnonce"]}:#{response["qop"]}:#{Digest::MD5.hexdigest a2}"
-              }
-              raise SaslError, "not-authorized" if response["response"] != calc_digest.call("AUTHENTICATE:#{response["digest-uri"]}")
-              
-              @user = user
-              @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
-                response_value = calc_digest.call ":#{response["digest-uri"]}"
-                @xml_output.text! Base64.encode64("rspauth=#{response_value}")
-              end
+            when "auth", "response"
+              __send__ "stanza_#{name}", attrs
               
             when "stream:stream"
               handle_stream
@@ -363,6 +319,65 @@ class Client
     end
   end
   
+  def stanza_auth(attrs)
+    raise ArgumentError if @user
+    
+    case attrs["mechanism"]
+    when "PLAIN"
+      authzid, username, password = Base64.decode64(expect_text).split("\0")
+      user = User.find_by_name username
+      raise SaslError, "not-authorized" if user.password != password
+      @user = user
+      @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl"
+      
+    when "DIGEST-MD5"
+      begin # try subsequent authentication
+        raise SaslError if not next_is_text?
+        response = parse_comma_seperated_hash Base64.decode64(expect_text)
+        user = User.find_by_name response["username"]
+        authenticate_user user, response, user.digest_md5_nonce, user.digest_md5_nc + 1
+      rescue SaslError # run normal challenge/response
+        @xml_output.challenge "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
+          @nonce = SecureRandom.base64 30
+          @xml_output.text! Base64.encode64("realm=\"localhost\",nonce=\"#{@nonce}\",qop=\"auth\",charset=utf-8,algorithm=md5-sess")
+        end
+      end
+      
+    else
+      raise ArgumentError
+    end
+  end
+  
+  def stanza_response(attrs)
+    response = parse_comma_seperated_hash Base64.decode64(expect_text)
+    user = User.find_by_name response["username"]
+    authenticate_user user, response, @nonce, 1
+  end
+  
+  def authenticate_user(user, response, nonce, nc)
+    raise SaslError, "not-authorized" if nonce.nil?
+    raise SaslError, "not-authorized" if response["nonce"] != nonce
+    raise SaslError, "not-authorized" if response["realm"] != "localhost"
+    raise SaslError, "not-authorized" if response["digest-uri"] != "xmpp/localhost"
+    raise SaslError, "not-authorized" if response["nc"].to_i != nc
+    
+    calc_digest = lambda { |a2|
+      a0 = "#{user.name}:localhost:#{user.password}"
+      a1 = "#{Digest::MD5.digest a0}:#{nonce}:#{response["cnonce"]}"
+      Digest::MD5.hexdigest "#{Digest::MD5.hexdigest a1}:#{nonce}:#{response["nc"]}:#{response["cnonce"]}:#{response["qop"]}:#{Digest::MD5.hexdigest a2}"
+    }
+    raise SaslError, "not-authorized" if response["response"] != calc_digest.call("AUTHENTICATE:#{response["digest-uri"]}")
+    
+    user.digest_md5_nonce = nonce
+    user.digest_md5_nc = nc
+    user.save!
+    @user = user
+    @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
+      response_value = calc_digest.call ":#{response["digest-uri"]}"
+      @xml_output.text! Base64.encode64("rspauth=#{response_value}")
+    end
+  end
+  
   def parse_comma_seperated_hash(data)
     entries = CSV.parse data, :col_sep => '=', :row_sep => ','
     hash = {}
@@ -375,7 +390,6 @@ class Client
 end
 
 class User < ActiveRecord::Base
-  
 end
 
 ActiveRecord::Base.logger = Logger.new STDOUT
