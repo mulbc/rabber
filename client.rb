@@ -256,7 +256,11 @@ class Client
                   end
                 end
                 RosterEntry.create :roster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RosterEntry::SUBSCRIPTION_TO
-                respond.call "result", true, nil
+                respond.call "result", true, lambda {
+                  @user.roster_entries.each do |entry|
+                    @xml_output.item "jid" => entry.jid, "name" => entry.name, "subscription" => entry.subscription_string
+                  end
+                }
               end
             end
           else
@@ -331,7 +335,7 @@ class Client
         expect_tag do |name2, attrs2|                  
           case name2
           when "body"
-            message = expect_text
+            he = expect_text
           when "html"
             expect_tag do |name3, attrs3|
               case name3
