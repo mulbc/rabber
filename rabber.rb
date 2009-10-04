@@ -60,6 +60,9 @@ class DebugIoWrapper < IO
   end
 end
 
+class ConnectionClosedError < RuntimeError
+end
+
 class SaslError < RuntimeError
 end
 
@@ -77,6 +80,7 @@ class Client
     Thread.new {
       Thread.current.abort_on_exception = true
       REXML::Document.parse_stream @socket, self
+      @queue.push [:connection_closed]
     }
   end
   
@@ -97,6 +101,8 @@ class Client
   
   def next_element
     @next_element ||= @queue.pop
+    raise ConnectionClosedError if @next_element.first == :connection_closed
+    @next_element
   end
   
   def consume
@@ -133,8 +139,12 @@ class Client
   end
   
   def run
-    expect_tag "stream:stream" do
-      handle_stream
+    begin
+      expect_tag "stream:stream" do
+        handle_stream
+      end
+    rescue ConnectionClosedError
+      puts "Connection closed."
     end
   end
   
@@ -188,6 +198,7 @@ class Client
               else
                 raise ArgumentError
               end
+              
             when "response"
               response = parse_comma_seperated_hash Base64.decode64(expect_text)
               
@@ -238,7 +249,7 @@ class Client
                         @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
                       end
                     end
-                    raise ArgumentError, name2
+                    #raise ArgumentError, name2
                   end
                 end
               when "get"
@@ -265,34 +276,58 @@ class Client
                         @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
                       end
                     end
-                    raise ArgumentError, name2
+                    #raise ArgumentError, name2
                   end
                 end
               end
               
             when "presence"
-              expect_tag do |name2, attrs2|
-                case name2
-                when "priority"
-                  expect_text do |priority|
-                    @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
+              loop do
+                break if next_is_tag_end?
+                expect_tag do |name2, attrs2|
+                  case name2
+                  when "status"
+                    expect_text do |status|
+                      @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
+                    end
+                  when "priority"
+                    expect_text do |priority|
+                      @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
+                    end
+                  when "c"
+                    # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
+                    # can be ignored in the beginning :)
+                  else
+                    raise ArgumentError, name2
                   end
-                else
-                  raise ArgumentError, name2
-                end
-              end
-              expect_tag do |name3, attrs3|
-                case name3
-                when "c"
-                  # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
-                  # can be ignored in the beginning :)
-                else
-                  raise ArgumentError, name3
                 end
               end
               
-            else
-              raise ArgumentError, name
+            when "message"
+              case attrs["type"]
+              when "chat"
+                loop do
+                  break if next_is_tag_end?
+                  expect_tag do |name2, attrs2|                  
+                    case name2
+                    when "body"
+                      message = expect_text
+                    when "html"
+                      expect_tag do |name3, attrs3|
+                        case name3
+                        when "body"
+                          message_html = expect_text
+                        end
+                      end
+                    else
+                      raise ArgumentError, name2
+                    end  
+                  end
+                end
+                
+              else
+                raise ArgumentError, name
+              end
             end
           rescue SaslError => e
             @xml_output.failure "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
