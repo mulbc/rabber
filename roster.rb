@@ -15,8 +15,16 @@ class RosterEntry < ActiveRecord::Base
   def subscription_to?
     subscription & SUBSCRIPTION_TO != 0
   end
-
+  
   def subscription_from?
     subscription & SUBSCRIPTION_FROM != 0
+  end
+  
+  def subscription_string
+    case subscription
+    when SUBSCRIPTION_TO then "to"
+    when SUBSCRIPTION_FROM then "from"
+    when SUBSCRIPTION_BOTH then "both"
+    end
   end
 end

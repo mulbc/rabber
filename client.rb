@@ -124,13 +124,13 @@ class Client
       end
       
       loop do
-        break if next_is_tag_end?
-        
         element = next_element true
         if element.is_a? Proc # action from other thread
           element.call self
           next
         end
+        
+        break if next_is_tag_end?
         
         expect_tag do |name, attrs|
           begin
@@ -249,8 +249,8 @@ class Client
                     group = RosterGroup.create :user => @user, :name => group_name
                   end
                 end
-                RosterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RosterEntry::SUBSCRIPTION_TO
-                respond.call "result", true
+                RosterEntry.create :roster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RosterEntry::SUBSCRIPTION_TO
+                respond.call "result", true, nil
               end
             end
           else
