@@ -243,6 +243,29 @@ class Client
                     respond.call "result", true
                   when "session"
                     respond.call "result", true
+                  when "query"
+                    case attrs2["xmlns"]
+                    when "jabber:iq:roster"
+                      #We will get something new for the roaster
+                      expect_tag do |name3, attrs3|
+                        case name3
+                        when "item"
+                          respond.call "result", true
+                          newUserJID = attrs3["jid"]
+                          newUserName = attrs3["name"]
+                          expect_tag do |name4, attrs4|
+                            case name4
+                            when "group"
+                              newUserGroup = expect_text
+                            else
+                              raise ArgumentError, name4
+                            end
+                          end
+                        else
+                          raise ArgumentError, name3
+                        end
+                      end
+                    end
                   else
                     respond.call "error", false do
                       @xml_output.error "type" => "cancel" do
@@ -305,6 +328,7 @@ class Client
               
             when "message"
               case attrs["type"]
+                # TODO Fix REXML ParseException on  ä ö ü
               when "chat"
                 loop do
                   break if next_is_tag_end?
