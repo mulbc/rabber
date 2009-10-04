@@ -221,9 +221,9 @@ class Client
   def stanza_iq(attrs)
     expect_tag do |name2, attrs2|
       respond = lambda { |type, send_jid, block|
-          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}" do
+        @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}" do
           @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"] do
-              @xml_output.jid "#{@user.name}@#{@server.hostname}/#{@current_stream_id}" if send_jid
+            @xml_output.jid "#{@user.name}@#{@server.hostname}/#{@current_stream_id}" if send_jid
           end
           block.call if block
         end
@@ -244,12 +244,12 @@ class Client
                 group = nil
                 expect_tag "group" do
                   group_name = expect_text
-                  group = RoasterGroup.first :conditions => ["user_id = ? AND name = ?", @user, group_name]
+                  group = RosterGroup.first :conditions => ["user_id = ? AND name = ?", @user, group_name]
                   if group.nil?
-                    group = RoasterGroup.create :user => @user, :name => group_name
+                    group = RosterGroup.create :user => @user, :name => group_name
                   end
                 end
-                RoasterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RoasterEntry::SUBSCRIPTION_TO
+                RosterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RosterEntry::SUBSCRIPTION_TO
                 respond.call "result", true
               end
             end
@@ -262,7 +262,7 @@ class Client
           when "query"
             respond.call "result", false, lambda {
               if attrs2["xmlns"] == "jabber:iq:roster"
-                @user.roaster_entries.each do |entry|
+                @user.roster_entries.each do |entry|
                   @xml_output.item "jid" => entry.jid, "name" => entry.name, "subscription" => entry.subscription_string
                 end
               end
@@ -272,7 +272,7 @@ class Client
             respond.call "result", false, nil
             # TODO proper vCard
           when "ping"
-          @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
+            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
           else
             raise IqError
           end
@@ -290,7 +290,7 @@ class Client
   
   def stanza_presence(attrs)
     if attrs["type"] == "subscribe"
-      @xml_output.status "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+      @xml_output.status "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
     else
       loop do
         break if next_is_tag_end?
@@ -298,12 +298,12 @@ class Client
           case name2
           when "status"
             status = expect_text
-            #          buddies = User.roaster_entries
+            #          buddies = User.roster_entries
             #          puts buddies
-            @xml_output.status "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+            @xml_output.status "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
           when "priority"
             priority = expect_text
-            @xml_output.priority "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+            @xml_output.priority "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
           when "c"
             # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
             # can be ignored in the beginning :)
