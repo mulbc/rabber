@@ -22,8 +22,7 @@ end
 
 require "errors"
 require "user"
-require "roaster_group"
-require "roaster_entry"
+require "roaster"
 require "client"
 require "debug_io_wrapper"
 
