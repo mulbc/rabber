@@ -58,6 +58,9 @@ class DebugIoWrapper < IO
   end
 end
 
+class ConnectionClosedError < RuntimeError
+end
+
 class Client
   def initialize(socket)
     @socket = socket
@@ -72,6 +75,7 @@ class Client
     Thread.new {
       Thread.current.abort_on_exception = true
       REXML::Document.parse_stream @socket, self
+      @queue.push [:connection_closed]
     }
   end
   
@@ -92,6 +96,8 @@ class Client
   
   def next_element
     @next_element ||= @queue.pop
+    raise ConnectionClosedError if @next_element.first == :connection_closed
+    @next_element
   end
   
   def consume
@@ -124,8 +130,12 @@ class Client
   end
   
   def run
-    expect_tag "stream:stream" do
-      handle_stream
+    begin
+      expect_tag "stream:stream" do
+        handle_stream
+      end
+    rescue ConnectionClosedError
+      puts "Connection closed."
     end
   end
   
@@ -157,9 +167,20 @@ class Client
             
             authzid, username, password = Base64.decode64(expect_text).split("\0")
             puts "", username, password
-            @user = username
             
-            @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl"
+            user = User.find_by_name username
+            #puts user.password
+            
+            if user.password == password
+              @xml_output.success "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" 
+              @user = user.name
+            else
+              # TODO limit failure logins to 2-3 and then send a <abort>
+              @xml_output.failure "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
+                @xml_output.tag! "not-authorized"
+              end
+            end
+            
           when "stream:stream"
             handle_stream
           when "iq"
@@ -186,7 +207,7 @@ class Client
                       @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
                     end
                   end
-                  raise ArgumentError, name2
+                  #raise ArgumentError, name2
                 end
               end
             when "get"
@@ -213,32 +234,55 @@ class Client
                       @xml_output.tag! "service-unavailable", "xmlns" => "urn:ietf:params:xml:ns:xmpp-stanzas"
                     end
                   end
-                  raise ArgumentError, name2
+                  #raise ArgumentError, name2
                 end
               end
             end
           when "presence"
-            expect_tag do |name2, attrs2|
-              case name2
-              when "priority"
-                expect_text do |priority|
-                  @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
+            loop do
+              break if next_is_tag_end?
+              expect_tag do |name2, attrs2|
+                case name2
+                when "status"
+                  expect_text do |status|
+                    @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
+                  end
+                when "priority"
+                  expect_text do |priority|
+                    @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{stream_id}"
+                  end
+                when "c"
+                  # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
+                  # can be ignored in the beginning :)
+                else
+                  raise ArgumentError, name2
                 end
-              else
-                raise ArgumentError, name2
               end
             end
-            expect_tag do |name3, attrs3|
-              case name3
-              when "c"
-                # in: <c xmlns='http://jabber.org/protocol/caps' node='http://pidgin.im/caps' ver='2.5.5' ext='mood moodn nick nickn tune tunen avatarmeta avatardata bob avatar'/>
-                # can be ignored in the beginning :)
-              else
-                raise ArgumentError, name3
+          when "message"
+            case attrs["type"]
+            when "chat"
+              loop do
+                break if next_is_tag_end?
+                expect_tag do |name2, attrs2|                  
+                  case name2
+                  when "body"
+                    message = expect_text
+                  when "html"
+                    expect_tag do |name3, attrs3|                  
+                      case name3
+                      when "body"
+                        message_html = expect_text
+                      end
+                    end
+                  else
+                    raise ArgumentError, name2
+                  end  
+                end
               end
+            else
+              raise ArgumentError, name
             end
-          else
-            raise ArgumentError, name
           end
         end
       end
