@@ -2,13 +2,16 @@ class DebugIoWrapper < IO
   def initialize(target)
     @target = target
     @direction = nil
+    @mutex = Mutex.new
   end
   
   def read(length)
     data = @target.read length
-    if @direction != :in
-      @direction = :in
-      $stdout.write "\n\nin   "
+    @mutex.synchronize do
+      if @direction != :in
+        @direction = :in
+        $stdout.write "\n\nin   "
+      end
     end
     $stdout.write data
     data
@@ -16,11 +19,13 @@ class DebugIoWrapper < IO
   
   def readline(del)
     data = @target.readline del
-    if @direction != :in
-      @direction = :in
-      $stdout.write "\n\nin   "
+    @mutex.synchronize do
+      if @direction != :in
+        @direction = :in
+        $stdout.write "\n\nin   "
+      end
+      $stdout.write data
     end
-    $stdout.write data
     data
   end
   
@@ -29,11 +34,13 @@ class DebugIoWrapper < IO
   end
   
   def write(data)
-    if @direction != :out
-      @direction = :out
-      $stdout.write "\n\nout  "
+    @mutex.synchronize do
+      if @direction != :out
+        @direction = :out
+        $stdout.write "\n\nout  "
+      end
+      $stdout.write data
     end
-    $stdout.write data
     @target.write data
   end
 end
