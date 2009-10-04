@@ -9,15 +9,15 @@ class DbBase < ActiveRecord::Migration
       t.timestamps
     end
     
-    create_table :roaster_groups do |t|
+    create_table :roster_groups do |t|
       t.integer :user_id, :null => false
       t.string :name, :null => false
       
       t.timestamps
     end
     
-    create_table :roaster_entries do |t|
-      t.integer :roaster_group_id, :null => false
+    create_table :roster_entries do |t|
+      t.integer :roster_group_id, :null => false
       t.string :jid, :null => false
       t.string :name
       t.integer :subscription, :null => false
@@ -28,7 +28,7 @@ class DbBase < ActiveRecord::Migration
 
   def self.down
     drop_table :users
-    drop_table :roaster_groups
-    drop_table :roaster_entries
+    drop_table :roster_groups
+    drop_table :roster_entries
   end
 end

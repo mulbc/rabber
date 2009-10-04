@@ -1,7 +1,11 @@
 class Client
-  def initialize(socket)
+  attr_reader :user
+  
+  def initialize(server, socket)
+    @server = server
     @socket = socket
     @queue = Queue.new
+    @actions = []
     @next_element = nil
     @stream_id_counter = 0
     
@@ -33,9 +37,25 @@ class Client
     @queue.push [:tag_end, name]
   end
   
-  def next_element
-    @next_element ||= @queue.pop
-    raise @next_element if @next_element.is_a? Exception
+  def queue_action(&block)
+    @queue.push block
+  end
+  
+  def next_element(return_actions = false)
+    while @next_element.nil?
+      return @actions.shift if return_actions and not @actions.empty?
+      
+      element = @queue.pop
+      case element
+      when Array
+        @next_element = element
+        break
+      when Proc
+        @actions << element
+      when Exception
+        raise element
+      end
+    end
     @next_element
   end
   
@@ -88,7 +108,7 @@ class Client
     @nonce = nil
     
     @xml_output.instruct! :xml, :version => "1.0", :encoding => "UTF-8"
-    @xml_output.stream :stream, "xmlns:stream" => "http://etherx.jabber.org/streams", "xmlns" => "jabber:client", "from" => "localhost", "id" => @current_stream_id, "xml:lang" => "en", "version" => "1.0" do
+    @xml_output.stream :stream, "xmlns:stream" => "http://etherx.jabber.org/streams", "xmlns" => "jabber:client", "from" => @server.hostname, "id" => @current_stream_id, "xml:lang" => "en", "version" => "1.0" do
       
       @xml_output.stream :features do
         if @user.nil?
@@ -105,6 +125,12 @@ class Client
       
       loop do
         break if next_is_tag_end?
+        
+        element = next_element true
+        if element.is_a? Proc # action from other thread
+          element.call self
+          next
+        end
         
         expect_tag do |name, attrs|
           begin
@@ -153,7 +179,7 @@ class Client
       rescue SaslError # run normal challenge/response
         @xml_output.challenge "xmlns" => "urn:ietf:params:xml:ns:xmpp-sasl" do
           @nonce = SecureRandom.base64 30
-          @xml_output.text! Base64.encode64("realm=\"localhost\",nonce=\"#{@nonce}\",qop=\"auth\",charset=utf-8,algorithm=md5-sess")
+          @xml_output.text! Base64.encode64("realm=\"#{@server.hostname}\",nonce=\"#{@nonce}\",qop=\"auth\",charset=utf-8,algorithm=md5-sess")
         end
       end
       
@@ -171,12 +197,12 @@ class Client
   def authenticate_user(user, response, nonce, nc)
     raise SaslError, "not-authorized" if nonce.nil?
     raise SaslError, "not-authorized" if response["nonce"] != nonce
-    raise SaslError, "not-authorized" if response["realm"] != "localhost"
-    raise SaslError, "not-authorized" if response["digest-uri"] != "xmpp/localhost"
+    raise SaslError, "not-authorized" if response["realm"] != @server.hostname
+    raise SaslError, "not-authorized" if response["digest-uri"] != "xmpp/#{@server.hostname}"
     raise SaslError, "not-authorized" if response["nc"].to_i != nc
     
     calc_digest = lambda { |a2|
-      a0 = "#{user.name}:localhost:#{user.password}"
+      a0 = "#{user.name}:#{@server.hostname}:#{user.password}"
       a1 = "#{Digest::MD5.digest a0}:#{nonce}:#{response["cnonce"]}"
       Digest::MD5.hexdigest "#{Digest::MD5.hexdigest a1}:#{nonce}:#{response["nc"]}:#{response["cnonce"]}:#{response["qop"]}:#{Digest::MD5.hexdigest a2}"
     }
@@ -195,9 +221,9 @@ class Client
   def stanza_iq(attrs)
     expect_tag do |name2, attrs2|
       respond = lambda { |type, send_jid, block|
-        @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}" do
+          @xml_output.iq "type" => type, "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}" do
           @xml_output.__send__ name2, "xmlns" => attrs2["xmlns"] do
-            @xml_output.jid "#{@user.name}@localhost/#{@current_stream_id}" if send_jid
+              @xml_output.jid "#{@user.name}@#{@server.hostname}/#{@current_stream_id}" if send_jid
           end
           block.call if block
         end
@@ -246,7 +272,7 @@ class Client
             respond.call "result", false, nil
             # TODO proper vCard
           when "ping"
-            @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "localhost/#{@current_stream_id}"
+          @xml_output.iq "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
           else
             raise IqError
           end

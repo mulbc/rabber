@@ -1,10 +1,10 @@
-class RoasterGroup < ActiveRecord::Base
+class RosterGroup < ActiveRecord::Base
   belongs_to :user
-  has_many :roaster_entries
+  has_many :roster_entries
 end
 
-class RoasterEntry < ActiveRecord::Base
-  belongs_to :roaster_group
+class RosterEntry < ActiveRecord::Base
+  belongs_to :roster_group
   
   attr_accessor :status
   
