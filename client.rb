@@ -248,19 +248,24 @@ class Client
             when "jabber:iq:roster"
               expect_tag "item" do |item_name, item_attrs|
                 group = nil
-                expect_tag "group" do
-                  group_name = expect_text
-                  group = RosterGroup.first :conditions => ["user_id = ? AND name = ?", @user, group_name]
-                  if group.nil?
-                    group = RosterGroup.create :user => @user, :name => group_name
+                if item_attrs["subscription"] == "remove"
+                  user = RosterEntry.first :conditions => ["jid = ?", item_attrs["jid"]]
+                  RosterEntry.delete user.id
+                else
+                  expect_tag "group" do
+                    group_name = expect_text
+                    group = RosterGroup.first :conditions => ["user_id = ? AND name = ?", @user, group_name]
+                    if group.nil?
+                      group = RosterGroup.create :user => @user, :name => group_name
+                    end
                   end
+                  RosterEntry.create :roster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RosterEntry::SUBSCRIPTION_TO
+                  respond.call "result", true, lambda {
+                    @user.roster_entries.each do |entry|
+                      @xml_output.item "jid" => entry.jid, "name" => entry.name, "subscription" => entry.subscription_string
+                    end
+                  }
                 end
-                RosterEntry.create :roster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RosterEntry::SUBSCRIPTION_TO
-                respond.call "result", true, lambda {
-                  @user.roster_entries.each do |entry|
-                    @xml_output.item "jid" => entry.jid, "name" => entry.name, "subscription" => entry.subscription_string
-                  end
-                }
               end
             end
           else
@@ -326,35 +331,32 @@ class Client
   end
   
   def stanza_message(attrs)
-    case attrs["type"]
-      # TODO Fix REXML ParseException on  ä ö ü
+    case attrs["type"]      
     when "chat"
       message = nil
+      message_html = nil
       loop do
         break if next_is_tag_end?
         expect_tag do |name2, attrs2|                  
           case name2
           when "body"
-            he = expect_text
+            message = expect_text
+          when "x"
+            expect_tag "composing" if not next_is_tag_end?
+          when "active"
+          when "paused", "composing"
+            to_client = to_locate attrs["to"]
+            to_client.send_typing attrs["type"], attrs["id"], "#{name2}"
           when "html"
-            expect_tag do |name3, attrs3|
-              case name3
-              when "body"
-                message_html = expect_text
-              end
+            expect_tag "body" do |name3, attrs3|
+              message_html = expect_text
             end
-          else
-            raise ArgumentError, name2
-          end  
+          end
         end
       end
-      name, host = attrs["to"].split "@"
-      if host == @server.hostname
-        to_user = User.find_by_name name
-        to_client = @server.find_client to_user
+      if message || message_html
+        to_client = to_locate attrs["to"]
         to_client.send_message attrs["type"], @user.jid, message
-      else
-        raise NotImplementedError
       end
     when "error", "groupchat", "headline", "normal"
       #Has to be implemented like http://xmpp.org/rfcs/rfc3921.html#stanzas-message-type
@@ -363,11 +365,41 @@ class Client
     end
   end
   
+  def to_locate(to)
+    name, host = to.split "@"
+    if host == @server.hostname
+      to_user = User.find_by_name name
+      to_client = @server.find_client to_user
+    else
+      raise NotImplementedError
+    end
+  end
+  
   def send_message(type, from_user, message)
     queue_action {
-      @xml_output.message "type" => type, "to" => @user, "from" => from_user do
+      @xml_output.message "type" => type, "to" => @user.jid, "from" => from_user do
         @xml_output.body do
           @xml_output.text! message
+        end
+      end
+    }
+  end
+  
+  # <message type='chat' id='purple7747bf39' to='test@localhost'><x xmlns='jabber:x:event'><composing/></x><composing xmlns='http://jabber.org/protocol/chatstates'/></message>
+  # <message type='chat' id='purple7747bf3a' to='test@localhost'><x xmlns='jabber:x:event'/><paused xmlns='http://jabber.org/protocol/chatstates'/></message>
+  # <message type='chat' id='purple7747bf3c' to='test@localhost'><x xmlns='jabber:x:event'/><active xmlns='http://jabber.org/protocol/chatstates'/></message>
+  def send_typing(type, id, writing)
+    queue_action {
+      @xml_output.message "type" => type, "to" => @user.jid do
+        case writing
+        when "composing"
+          @xml_output.x "xmlns" => "jabber:x:event" do
+            @xml_output.composing
+          end
+          @xml_output.composing "xmlns" => "http://jabber.org/protocol/chatstates"
+        when "paused", "active"
+          @xml_output.x "xmlns" => "jabber:x:event"
+          @xml_output.__send__ name2, "xmlns" => "http://jabber.org/protocol/chatstates"
         end
       end
     }

@@ -11,6 +11,15 @@
 
 ActiveRecord::Schema.define(:version => 0) do
 
+  create_table "history", :force => true do |t|
+    t.integer  "roster_entries_id", :null => false
+    t.string   "from",              :null => false
+    t.string   "to",                :null => false
+    t.string   "message",           :null => false
+    t.datetime "created_at"
+    t.datetime "updated_at"
+  end
+
   create_table "roster_entries", :force => true do |t|
     t.integer  "roster_group_id", :null => false
     t.string   "jid",             :null => false

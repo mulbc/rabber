@@ -5,6 +5,7 @@ end
 
 class RosterEntry < ActiveRecord::Base
   belongs_to :roster_group
+  has_many :history
   
   attr_accessor :status
   
@@ -27,4 +28,8 @@ class RosterEntry < ActiveRecord::Base
     when SUBSCRIPTION_BOTH then "both"
     end
   end
+end
+
+class History < ActiveRecord::Base
+  belongs_to :roster_entry
 end
