@@ -3,6 +3,11 @@ class Server
   
   def initialize
     @hostname = "localhost"
+    @clients = []
+  end
+  
+  def find_client(user)
+    @clients.find { |client| client.user == user }
   end
   
   def run
@@ -15,12 +20,14 @@ class Server
       socket = tcpserver.accept[0]
       socket = DebugIoWrapper.new socket
       client = Client.new socket
+      @clients << client
       Thread.new {
         begin
           client.run
         rescue Exception => e
           puts "", "#{e.class}: #{e.to_s}", e.backtrace
         end
+        @clients.delete client
       }
     end
   end

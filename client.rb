@@ -1,7 +1,10 @@
 class Client
+  attr_reader :user
+  
   def initialize(socket)
     @socket = socket
     @queue = Queue.new
+    @actions = []
     @next_element = nil
     @stream_id_counter = 0
     
@@ -33,9 +36,25 @@ class Client
     @queue.push [:tag_end, name]
   end
   
-  def next_element
-    @next_element ||= @queue.pop
-    raise @next_element if @next_element.is_a? Exception
+  def queue_action(&block)
+    @queue.push block
+  end
+  
+  def next_element(return_actions = false)
+    while @next_element.nil?
+      return @actions.shift if return_actions and not @actions.empty?
+      
+      element = @queue.pop
+      case element
+      when Array
+        @next_element = element
+        break
+      when Proc
+        @actions << element
+      when Exception
+        raise element
+      end
+    end
     @next_element
   end
   
@@ -105,6 +124,12 @@ class Client
       
       loop do
         break if next_is_tag_end?
+        
+        element = next_element true
+        if element.is_a? Proc # action from other thread
+          element.call self
+          next
+        end
         
         expect_tag do |name, attrs|
           begin
