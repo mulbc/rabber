@@ -272,24 +272,17 @@ class Client
         when "query"
           case attrs2["xmlns"]
           when "jabber:iq:roster"
-            #We will get something new for the roaster
-            expect_tag do |name3, attrs3|
-              case name3
-              when "item"
-                respond.call "result", true
-                newUserJID = attrs3["jid"]
-                newUserName = attrs3["name"]
-                expect_tag do |name4, attrs4|
-                  case name4
-                  when "group"
-                    newUserGroup = expect_text
-                  else
-                    raise ArgumentError, name4
-                  end
+            expect_tag "item" do |item_name, item_attrs|
+              group = nil
+              expect_tag "group" do
+                group_name = expect_text
+                group = RoasterGroup.first :conditions => ["user_id = ? AND name = ?", @user, group_name]
+                if group.nil?
+                  group = RoasterGroup.create :user => @user, :name => group_name
                 end
-              else
-                raise ArgumentError, name3
               end
+              RoasterEntry.create :roaster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"]
+              respond.call "result", true
             end
           end
         else
@@ -393,6 +386,19 @@ class Client
 end
 
 class User < ActiveRecord::Base
+  has_many :roaster_groups
+  has_many :roaster_entries, :through => :roaster_group
+end
+
+class RoasterGroup < ActiveRecord::Base
+  belongs_to :user
+  has_many :roaster_entries
+end
+
+class RoasterEntry < ActiveRecord::Base
+  belongs_to :roaster_group
+  
+  attr_accessor :status
 end
 
 ActiveRecord::Base.logger = Logger.new STDOUT
