@@ -14,6 +14,8 @@ ActiveRecord::Schema.define(:version => 0) do
   create_table "users", :force => true do |t|
     t.string   "name"
     t.string   "password"
+    t.string   "digest_md5_nonce"
+    t.integer  "digest_md5_nc"
     t.datetime "created_at"
     t.datetime "updated_at"
   end
