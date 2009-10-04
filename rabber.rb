@@ -22,7 +22,7 @@ end
 
 require "errors"
 require "user"
-require "roaster"
+require "roster"
 require "server"
 require "client"
 require "debug_io_wrapper"

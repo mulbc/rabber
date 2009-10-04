@@ -11,16 +11,16 @@
 
 ActiveRecord::Schema.define(:version => 0) do
 
-  create_table "roaster_entries", :force => true do |t|
-    t.integer  "roaster_group_id", :null => false
-    t.string   "jid",              :null => false
+  create_table "roster_entries", :force => true do |t|
+    t.integer  "roster_group_id", :null => false
+    t.string   "jid",             :null => false
     t.string   "name"
-    t.integer  "subscription",     :null => false
+    t.integer  "subscription",    :null => false
     t.datetime "created_at"
     t.datetime "updated_at"
   end
 
-  create_table "roaster_groups", :force => true do |t|
+  create_table "roster_groups", :force => true do |t|
     t.integer  "user_id",    :null => false
     t.string   "name",       :null => false
     t.datetime "created_at"
