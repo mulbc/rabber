@@ -311,6 +311,8 @@ class Client
         break if next_is_tag_end?
         expect_tag do |name2, attrs2|
           case name2
+          when "show"
+            statusid = expect_text
           when "status"
             status = expect_text
             #          buddies = User.roster_entries
