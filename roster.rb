@@ -7,7 +7,6 @@ class RosterEntry < ActiveRecord::Base
   belongs_to :roster_group
   has_many :history
   
-  attr_accessor :status
   
   SUBSCRIPTION_TO = 1
   SUBSCRIPTION_FROM = 2

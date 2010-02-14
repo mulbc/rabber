@@ -39,6 +39,7 @@ ActiveRecord::Schema.define(:version => 0) do
   create_table "users", :force => true do |t|
     t.string   "name",                            :null => false
     t.string   "password",                        :null => false
+    t.string   "status"
     t.string   "digest_md5_nonce"
     t.integer  "digest_md5_nc",    :default => 0, :null => false
     t.datetime "created_at"
