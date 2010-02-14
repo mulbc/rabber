@@ -5,7 +5,7 @@ end
 
 class RosterEntry < ActiveRecord::Base
   belongs_to :roster_group
-  has_many :history
+  has_many :histories
   
   
   SUBSCRIPTION_TO = 1

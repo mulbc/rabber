@@ -249,7 +249,7 @@ class Client
                 group = nil
                 if item_attrs["subscription"] == "remove"
                   user = RosterEntry.first :conditions => ["jid = ?", item_attrs["jid"]]
-                  RosterEntry.delete user.id
+                  RosterEntry.delete user.id if not user.nil?
                 else
                   expect_tag "group" do
                     group_name = expect_text
@@ -258,7 +258,7 @@ class Client
                       group = RosterGroup.create :user => @user, :name => group_name
                     end
                   end
-                  RosterEntry.create :roster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RosterEntry::SUBSCRIPTION_TO
+                  RosterEntry.create :roster_group => group, :jid => item_attrs["jid"], :name => item_attrs["name"], :subscription => RosterEntry::SUBSCRIPTION_BOTH
                   respond.call "result", true, lambda {
                     @user.roster_entries.each do |entry|
                       @xml_output.item "jid" => entry.jid, "name" => entry.name, "subscription" => entry.subscription_string
@@ -303,8 +303,9 @@ class Client
   end
 
   def stanza_presence(attrs)
-    if attrs["type"] == "subscribe"
-      @xml_output.status "type" => "result", "id" => attrs["id"], "to" => "#{@server.hostname}/#{@current_stream_id}"
+    if (attrs["type"] == "subscribe" || attrs["type"] == "subscribed" || attrs["type"] == "unsubscribed")
+      to_client = to_locate attrs["to"]
+      to_client.send_presence attrs["type"], (attrs["type"] == "subscribe")? @user.jid : nil
     else
       loop do
         break if next_is_tag_end?
@@ -365,7 +366,11 @@ class Client
       if message || message_html
         to_client = to_locate attrs["to"]
         to_client.send_message attrs["type"], @user.jid, message
+
+        # History Section
+        save_history attrs["to"], message
       end
+
     when "error", "groupchat", "headline", "normal"
       #Has to be implemented like http://xmpp.org/rfcs/rfc3921.html#stanzas-message-type
     else
@@ -394,6 +399,16 @@ class Client
     }
   end
 
+  def send_presence(type, from_user)
+    queue_action {
+      if from_user.nil?
+        @xml_output.presence "to" => @user.jid, "type" => type
+      else
+        @xml_output.presence "to" => @user.jid, "type" => type, "from" => from_user
+      end
+    }
+  end
+
   # <message type='chat' id='purple33cc724e' to='testuser@localhost/Home' from='chris@localhost/Home'>
   #<x xmlns='jabber:x:event'><composing/></x><composing xmlns='http://jabber.org/protocol/chatstates'/></message>
 
@@ -409,6 +424,18 @@ class Client
         @xml_output.__send__ writing, "xmlns" => "http://jabber.org/protocol/chatstates"
       end
     }
+  end
+
+  def save_history (to, message)
+    entry = RosterEntry.first :conditions => ["jid = ?", to]
+    if entry.nil?
+      group = RosterGroup.first :conditions => ["user_id = ? AND name = ?", @user, "Default"]
+      if group.nil?
+        group = RosterGroup.create :user => @user, :name => "Default"
+      end
+      entry = RosterEntry.create :roster_group => group, :jid => to, :name => to, :subscription => RosterEntry::SUBSCRIPTION_TO
+    end
+    History.create :roster_entry => entry, :from => @user.jid, :to => to, :message => message
   end
 
   def parse_comma_seperated_hash(data)

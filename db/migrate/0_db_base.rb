@@ -25,8 +25,8 @@ class DbBase < ActiveRecord::Migration
       t.timestamps
     end
     
-    create_table :history do |t|
-      t.integer :roster_entries_id, :null => false
+    create_table :histories do |t|
+      t.integer :roster_entry_id, :null => false
       t.string :from, :null => false
       t.string :to, :null => false
       t.string :message, :null => false
@@ -39,6 +39,6 @@ class DbBase < ActiveRecord::Migration
     drop_table :users
     drop_table :roster_groups
     drop_table :roster_entries
-    drop_table :history
+    drop_table :histories
   end
 end

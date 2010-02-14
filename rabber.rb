@@ -10,7 +10,8 @@ require 'digest/md5'
 
 ActiveRecord::Base # load here to avoid verbose warnings
 
-$VERBOSE = true
+#$VERBOSE = true
+$WARNING = false
 
 module Kernel
   def quiet

@@ -11,39 +11,38 @@
 
 ActiveRecord::Schema.define(:version => 0) do
 
-  create_table "history", :force => true do |t|
-    t.integer  "roster_entries_id", :null => false
-    t.string   "from",              :null => false
-    t.string   "to",                :null => false
-    t.string   "message",           :null => false
-    t.datetime "created_at"
-    t.datetime "updated_at"
+  create_table "histories", :force => true do |t|
+    t.integer  "roster_entry_id", :null => false
+    t.string   "from",            :null => false
+    t.string   "to",              :null => false
+    t.string   "message",         :null => false
+    t.datetime "created_at",      :null => false
+    t.datetime "updated_at",      :null => false
   end
 
   create_table "roster_entries", :force => true do |t|
     t.integer  "roster_group_id", :null => false
     t.string   "jid",             :null => false
-    t.string   "name"
+    t.string   "name",            :null => false
     t.integer  "subscription",    :null => false
-    t.datetime "created_at"
-    t.datetime "updated_at"
+    t.datetime "created_at",      :null => false
+    t.datetime "updated_at",      :null => false
   end
 
   create_table "roster_groups", :force => true do |t|
     t.integer  "user_id",    :null => false
     t.string   "name",       :null => false
-    t.datetime "created_at"
-    t.datetime "updated_at"
+    t.datetime "created_at", :null => false
+    t.datetime "updated_at", :null => false
   end
 
   create_table "users", :force => true do |t|
     t.string   "name",                            :null => false
     t.string   "password",                        :null => false
-    t.string   "status"
-    t.string   "digest_md5_nonce"
+    t.string   "digest_md5_nonce",                :null => false
     t.integer  "digest_md5_nc",    :default => 0, :null => false
-    t.datetime "created_at"
-    t.datetime "updated_at"
+    t.datetime "created_at",                      :null => false
+    t.datetime "updated_at",                      :null => false
   end
 
 end
